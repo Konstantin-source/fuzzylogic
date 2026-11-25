@@ -243,3 +243,104 @@ def test_missing_number_rejects_import_and_preserves_existing_catalog():
         importer.import_rows(columns, rows, importer.suggest(columns))
     with db.connect() as conn:
         assert conn.execute('SELECT COUNT(*) FROM articles').fetchone()[0] == 2
+
+
+def test_ai_terms_search_catalog_and_reject_invented_articles(monkeypatch):
+    from app import openai_client as ai
+    columns, rows = importer.parse('catalog.csv', ('Artikelnummer;Bezeichnung;Zusatz;Warengruppe\n'
+        'A1;Keilrahmenleiste;schwarz;Leisten\n'
+        'A2;Schattenfugenrahmen;schwarz;Rahmen\n'
+        'A3;Unterlegscheibe;Stahl;Scheiben\n').encode())
+    importer.import_rows(columns, rows, importer.suggest(columns))
+    monkeypatch.setattr(ai, 'available', lambda: True)
+    monkeypatch.setattr(ai, 'expand_query', lambda q: ['Schattenfugenrahmen'])
+    monkeypatch.setattr(ai, 'rerank', lambda q, candidates: [
+        {'number':'NOT-IN-CATALOG','confidence':'hoch','reason':'erfunden'},
+        {'number':'A2','confidence':'mittel','reason':'Rahmen'}])
+    response = search.ai_search('schwarzer Rahmen für Keilrahmen', rerank=True)
+    assert response['terms'] == ['Schattenfugenrahmen']
+    assert response['results'][0]['number'] == 'A2'
+    assert 'NOT-IN-CATALOG' not in [item['number'] for item in response['results']]
+    monkeypatch.setattr(ai, 'expand_query', lambda q: ['Keilrahmenleiste'])
+    filtered = search.ai_search('schwarzer Rahmen für Keilrahmen', category='Leisten', rerank=False)
+    assert [item['number'] for item in filtered['results']] == ['A1']
+
+
+def test_ai_terms_failure_keeps_local_search(monkeypatch):
+    from app import openai_client as ai
+    load()
+    monkeypatch.setattr(ai, 'available', lambda: True)
+    def fail(query): raise RuntimeError('offline')
+    monkeypatch.setattr(ai, 'expand_query', fail)
+    response = search.ai_search('Winkel')
+    assert response['mode'] == 'local' and response['results'] == []
+    results, mode = search.search('Winkel')
+    assert mode == 'local' and results[0]['number'] == 'A1'
+
+
+def test_generated_search_terms_are_bounded(monkeypatch):
+    from types import SimpleNamespace
+    from app import openai_client as ai
+    captured = {}
+    def parse(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(output_parsed=ai.SearchTerms(terms=[' Winkel ', 'winkel', 'x'*121, 'Rahmen', 'Profil', 'weitere']))
+    monkeypatch.setattr(ai, 'client', lambda: SimpleNamespace(responses=SimpleNamespace(parse=parse)))
+    assert ai.expand_query('Winkel') == ['Winkel', 'Rahmen', 'Profil']
+    assert captured['text_format'] is ai.SearchTerms
+    assert captured['reasoning'] == {'effort': ai.REASONING_EFFORT}
+
+
+def test_embedding_index_is_normalized_cached_and_invalidated(monkeypatch):
+    import numpy as np
+    from app import openai_client as ai
+    load()
+    monkeypatch.setattr(ai, 'DIMENSIONS', 3)
+    with db.connect() as conn:
+        article = conn.execute("SELECT hash FROM articles WHERE number='A1'").fetchone()
+        conn.execute('INSERT INTO embeddings VALUES (?,?,?,?,?)', (article['hash'], 'openai', ai.MODEL, 3, np.array([3,4,0], dtype=np.float32).tobytes()))
+    search.invalidate_embedding_cache()
+    with db.connect() as conn:
+        first, positions = search.embedding_index(conn)
+        second, _ = search.embedding_index(conn)
+        assert first is second
+        assert np.allclose(np.linalg.norm(first, axis=1), 1)
+        assert np.isclose(first[positions[article['hash']]] @ np.array([0.6,0.8,0], dtype=np.float32), 1)
+        conn.execute('UPDATE embeddings SET vector=? WHERE hash=?', (np.array([0,0,2], dtype=np.float32).tobytes(), article['hash']))
+    search.invalidate_embedding_cache()
+    with db.connect() as conn:
+        updated, positions = search.embedding_index(conn)
+        assert updated is not first
+        assert np.allclose(updated[positions[article['hash']]], [0,0,1])
+
+
+def test_ai_search_api_returns_catalog_data_only(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import openai_client as ai
+    from app.main import app
+    columns, rows = importer.parse('catalog.csv', 'Artikelnummer;Bezeichnung\nA1;Schattenfugenrahmen\n'.encode())
+    importer.import_rows(columns, rows, importer.suggest(columns))
+    with TestClient(app) as client:
+        monkeypatch.setattr(ai, 'available', lambda: True)
+        monkeypatch.setattr(ai, 'expand_query', lambda query: ['Schattenfugenrahmen'])
+        response = client.get('/api/ai-search', params={'q':'Rahmen für Keilrahmen'}, auth=('test-user', 'test-password-long-enough'))
+    assert response.status_code == 200
+    item = response.json()['results'][0]
+    assert item['number'] == 'A1'
+    assert 'search_text' not in item and 'hash' not in item
+
+
+def test_catalog_reimport_invalidates_cached_vector_index(monkeypatch):
+    import numpy as np
+    from app import openai_client as ai
+    load()
+    monkeypatch.setattr(ai, 'DIMENSIONS', 3)
+    with db.connect() as conn:
+        digest = conn.execute("SELECT hash FROM articles WHERE number='A1'").fetchone()['hash']
+        conn.execute('INSERT INTO embeddings VALUES (?,?,?,?,?)', (digest, 'openai', ai.MODEL, 3, np.ones(3, dtype=np.float32).tobytes()))
+    with db.connect() as conn:
+        assert len(search.embedding_index(conn)[1]) == 1
+    columns, rows = importer.parse('catalog.csv', b'Artikelnummer;Bezeichnung\nB1;Mutter\n')
+    importer.import_rows(columns, rows, importer.suggest(columns))
+    with db.connect() as conn:
+        assert search.embedding_index(conn)[1] == {}

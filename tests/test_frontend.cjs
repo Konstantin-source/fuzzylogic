@@ -13,9 +13,9 @@ function startApp() {
     if (!elements.has(id)) {
       elements.set(id, {
         value: '', checked: false, open: false, tagName: 'DIV',
-        handlers: {}, classList: {toggle() {}, remove() {}},
+        handlers: {}, children: [], classList: {toggle() {}, remove() {}},
         addEventListener(name, handler) { this.handlers[name] = handler; },
-        replaceChildren() {}, append() {}, querySelector() { return null; }, focus() {},
+        replaceChildren(...children) { this.children = children; }, append(...children) { this.children.push(...children); }, querySelector() { return null; }, focus() {},
       });
     }
     return elements.get(id);
@@ -34,7 +34,9 @@ function startApp() {
       requests.push(url);
       return {ok: true, json: async () => url === '/api/config'
         ? {count: 0, rerank_default: false, categories: []}
-        : {results: [], mode: 'local'}};
+        : String(url).startsWith('/api/ai-search?')
+          ? {results: [], terms: ['Schattenfugenrahmen'], mode: 'terms', message: ''}
+          : {results: [], mode: 'local'}};
     },
     setTimeout(fn) { const id=++nextTimer; timers.set(id,fn); return id; },
     clearTimeout(id) { timers.delete(id); },
@@ -57,8 +59,10 @@ test('typing and option changes stay local, button explicitly requests AI', asyn
   assert.equal(searchRequests(app).at(-1).get('use_ai'), 'false');
   app.element('rerank').onchange();
   assert.equal(searchRequests(app).at(-1).get('use_ai'), 'false');
+  assert.equal(app.requests.filter(url => String(url).startsWith('/api/ai-search?')).length, 0);
   app.element('submit-search').onclick();
-  assert.equal(searchRequests(app).at(-1).get('use_ai'), 'true');
+  assert.equal(searchRequests(app).at(-1).get('use_ai'), 'false');
+  assert.equal(app.requests.filter(url => String(url).startsWith('/api/ai-search?')).length, 1);
 });
 
 test('pressing Enter explicitly requests AI', () => {
@@ -67,5 +71,16 @@ test('pressing Enter explicitly requests AI', () => {
   query.value = 'Schraube';
   app.document.activeElement = query;
   app.documentHandlers.keydown({key:'Enter', preventDefault() {}});
-  assert.equal(searchRequests(app).at(-1).get('use_ai'), 'true');
+  assert.equal(searchRequests(app).at(-1).get('use_ai'), 'false');
+  assert.equal(app.requests.filter(url => String(url).startsWith('/api/ai-search?')).length, 1);
+});
+
+test('AI panel presents generated search terms separately', async () => {
+  const app = startApp();
+  app.element('query').value = 'Rahmen für Keilrahmen';
+  app.element('submit-search').onclick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.element('ai-panel').hidden, false);
+  assert.equal(app.element('ai-terms').children[0].textContent, 'Schattenfugenrahmen');
+  assert.equal(app.element('status').textContent, 'KI-Suche aktiv');
 });

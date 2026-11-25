@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from app import db, importer, openai_client as ai
-from app.search import normalize, search
+from app.search import normalize, search, ai_search, invalidate_embedding_cache
 from app.security import credentials_configured, protect
 
 @asynccontextmanager
@@ -60,6 +60,7 @@ def index_embeddings(job_id):
             vectors = ai.embed([r['search_text'] for r in batch])
             with db.connect() as conn:
                 conn.executemany('INSERT OR REPLACE INTO embeddings VALUES (?,?,?,?,?)', [(r['hash'], 'openai', ai.MODEL, ai.DIMENSIONS, v.tobytes()) for r,v in zip(batch,vectors)])
+            invalidate_embedding_cache()
             jobs[job_id]['done'] = min(start + len(batch), len(rows))
         jobs[job_id].update(status='done', message='Indexierung abgeschlossen.')
     except Exception:
@@ -98,6 +99,16 @@ def do_search(q: str, category: str = '', rerank: bool = False, use_ai: bool = F
         r.pop('hash', None); r.pop('search_text', None)
     return {'results':results, 'mode':mode}
 
+@app.get('/api/ai-search')
+def do_ai_search(q: str, category: str = '', rerank: bool = False):
+    if not q.strip() or len(q) > 300:
+        return {'results': [], 'terms': [], 'mode': 'local', 'message': ''}
+    response = ai_search(q, category, rerank)
+    for row in response['results']:
+        row.pop('hash', None)
+        row.pop('search_text', None)
+    return response
+
 class Synonym(BaseModel):
     term: str = Field(min_length=1, max_length=200)
 
@@ -115,4 +126,5 @@ def add_synonym(number: str, body: Synonym):
         conn.execute('UPDATE articles SET search_text=?, hash=? WHERE number=?', (text,digest,number))
         conn.execute('DELETE FROM article_fts WHERE number=?', (number,))
         conn.execute('INSERT INTO article_fts(number, search_text) VALUES (?,?)', (number,text))
+    invalidate_embedding_cache()
     return {'job': start_job()}

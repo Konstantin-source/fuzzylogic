@@ -90,4 +90,6 @@ def import_rows(columns, records, mapping):
         conn.executemany('INSERT INTO articles (number,name,extra,category,unit,ean,location,matchcode,width,height,length,search_text,hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', articles)
         conn.executemany('INSERT INTO article_fts(number, search_text) VALUES (?,?)', [(a[0], a[-2]) for a in articles])
         conn.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', ('mapping:' + json.dumps(columns, ensure_ascii=False), json.dumps(mapping, ensure_ascii=False)))
+    from app.search import invalidate_embedding_cache
+    invalidate_embedding_cache()
     return len(articles)
