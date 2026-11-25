@@ -82,7 +82,8 @@ async def do_import(file: UploadFile = File(...), mapping: str = Form(...)):
         with lock: count = importer.import_rows(columns, records, selected)
     except (ValueError, TypeError, KeyError) as exc: raise HTTPException(400, str(exc))
     except Exception: raise HTTPException(400, 'Datei konnte nicht importiert werden.')
-    return {'count': count, 'job': start_job()}
+    without_name = sum(not str(row.get(selected.get('name', ''), '') or '').strip() for row in records)
+    return {'count': count, 'without_name': without_name, 'job': start_job()}
 
 @app.get('/api/jobs/{job_id}')
 def job(job_id: str):

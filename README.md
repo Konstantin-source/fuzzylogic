@@ -25,7 +25,7 @@ Für einen Git-basierten Portainer-Stack `docker-compose.portainer.yml` als Comp
 
 ## Katalog importieren
 
-Über **Katalog importieren** eine CSV- oder XLSX-Datei auswählen, die erkannten Spalten kontrollieren und den Import starten. Artikelnummer und Bezeichnung sind Pflichtfelder; Artikelnummern müssen eindeutig sein. Der Import ersetzt den bisherigen Katalog vollständig. Das Mapping wird pro Spaltenstruktur gespeichert. `sample_data/demo_catalog.csv` enthält ausschließlich erfundene Beispieldaten. CSV akzeptiert UTF-8, Windows-1252 und Latin-1 sowie Semikolon, Komma und Tabulator. XLSX verwendet das erste Tabellenblatt.
+Über **Katalog importieren** eine CSV- oder XLSX-Datei auswählen, die erkannten Spalten kontrollieren und den Import starten. Artikelnummer und Bezeichnung müssen Spalten zugeordnet sein; jede Artikelnummer muss ausgefüllt und eindeutig sein. Artikel mit leerer Bezeichnung werden übernommen und als „Ohne Bezeichnung“ angezeigt; ihre Anzahl wird beim Import angezeigt. Der Import ersetzt den bisherigen Katalog vollständig. Das Mapping wird pro Spaltenstruktur gespeichert. `sample_data/demo_catalog.csv` enthält ausschließlich erfundene Beispieldaten. CSV akzeptiert UTF-8, Windows-1252 und Latin-1 sowie Semikolon, Komma und Tabulator. XLSX verwendet das erste Tabellenblatt.
 
 SelectLine-Spalten wie `EANNummer`, `Artikelgruppe`, `Mengeneinheit`, `Matchcode` und optionale Breiten-, Höhen- und Längenfelder werden vorgeschlagen und können angepasst werden. Matchcode und Maße sind durchsuchbar; eine Maßeinheit wird dabei nicht angenommen. Andere, nicht zugeordnete Exportspalten werden nicht importiert.
 

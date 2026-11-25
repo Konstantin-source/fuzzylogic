@@ -218,3 +218,28 @@ def test_existing_catalog_schema_is_migrated():
         row = conn.execute('SELECT * FROM articles WHERE number=?', ('S001',)).fetchone()
         assert row['name'] == 'Profil'
         assert all(row[field] == '' for field in ('matchcode', 'width', 'height', 'length'))
+
+
+def test_import_accepts_empty_description_without_fabricating_data():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    import json
+    content = 'Artikelnummer;Bezeichnung;Zusatz\nA1;;Winkel\nA2;Schraube;\n'.encode()
+    columns, rows = importer.parse('catalog.csv', content)
+    with TestClient(app) as client:
+        response = client.post('/api/import', auth=('test-user', 'test-password-long-enough'), files={'file': ('catalog.csv', content, 'text/csv')}, data={'mapping': json.dumps(importer.suggest(columns))})
+        assert response.status_code == 200
+        assert response.json()['count'] == 2
+        assert response.json()['without_name'] == 1
+    with db.connect() as conn:
+        assert conn.execute('SELECT name FROM articles WHERE number=?', ('A1',)).fetchone()['name'] == ''
+    assert search.search('Winkel')[0][0]['number'] == 'A1'
+
+
+def test_missing_number_rejects_import_and_preserves_existing_catalog():
+    load()
+    columns, rows = importer.parse('catalog.csv', b'Artikelnummer;Bezeichnung\n;Winkel\n')
+    with pytest.raises(ValueError, match='Artikelnummer'):
+        importer.import_rows(columns, rows, importer.suggest(columns))
+    with db.connect() as conn:
+        assert conn.execute('SELECT COUNT(*) FROM articles').fetchone()[0] == 2

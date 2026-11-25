@@ -77,7 +77,7 @@ def import_rows(columns, records, mapping):
         for record in records:
             values = {f: str(record.get(mapping.get(f, ''), '') or '').strip() for f in FIELDS}
             number = values['number']
-            if not number or not values['name']: raise ValueError('Jeder Artikel benötigt Artikelnummer und Bezeichnung.')
+            if not number: raise ValueError('Jeder Artikel benötigt eine Artikelnummer.')
             if number in seen: raise ValueError('Artikelnummern müssen eindeutig sein.')
             seen.add(number)
             search_text = article_search_text(values, syn.get(number, []))
