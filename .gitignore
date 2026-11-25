@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.sqlite*
+*.csv
+!sample_data/demo_catalog.csv
+*.xlsx
+*.xls
+*.npy
+__pycache__/
+.venv/
+.pytest_cache/

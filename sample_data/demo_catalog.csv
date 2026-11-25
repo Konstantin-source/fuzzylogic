@@ -1,0 +1,41 @@
+Artikelnummer;Bezeichnung;Zusatztext;Warengruppe;Einheit;EAN;Lagerort
+A1001;Sechskantschraube;M8x40 Edelstahl;Schrauben;Stk;;A01
+A1002;Sechskantschraube;M8 x 30 verzinkt;Schrauben;Stk;;A01
+A1003;Zylinderschraube Innensechskant;M6x20 Edelstahl;Schrauben;Stk;;A02
+A1004;Zylinderschraube Innensechskant;M8*40 Stahl;Schrauben;Stk;;A02
+A1005;Senkschraube;M5 x 16 Edelstahl;Schrauben;Stk;;A03
+A1006;Holzschraube;5x60 verzinkt;Schrauben;Stk;;A03
+A1007;Blechschraube;4,2x19 verzinkt;Schrauben;Stk;;A03
+A1008;Gewindestange;M10 x 1000 mm Stahl;Schrauben;Stk;;A04
+A1009;Sechskantmutter;M8 Edelstahl;Muttern;Stk;;B01
+A1010;Sechskantmutter;M10 verzinkt;Muttern;Stk;;B01
+A1011;Sicherungsmutter;M8 mit Klemmteil;Muttern;Stk;;B02
+A1012;Flügelmutter;M6 Edelstahl;Muttern;Stk;;B02
+A1013;Unterlegscheibe;8,4 mm Edelstahl;Scheiben;Stk;;B03
+A1014;Unterlegscheibe;10,5 mm verzinkt;Scheiben;Stk;;B03
+A1015;Federscheibe;M8 Stahl;Scheiben;Stk;;B04
+A1016;Aluminiumprofil;20x40 mm Nutprofil;Profile;Stk;;C01
+A1017;Aluminiumprofil;20 x 20 mm Nutprofil;Profile;Stk;;C01
+A1018;Aluminiumprofil;40/40 mm Nutprofil;Profile;Stk;;C01
+A1019;Flachprofil Aluminium;30 x 3 mm;Profile;Stk;;C02
+A1020;Winkelverbinder;40x40 Stahl verzinkt;Verbinder;Stk;;C03
+A1021;Winkelverbinder;20 x 40 mm schwarz;Verbinder;Stk;;C03
+A1022;Eckverbinder;40x40 Aluminium;Verbinder;Stk;;C04
+A1023;Kabelbinder;200 x 4,8 mm schwarz;Elektro;Stk;;D01
+A1024;Kabelbinder;100x2,5 mm natur;Elektro;Stk;;D01
+A1025;Kabelbinder;300 x 7,6 mm schwarz;Elektro;Stk;;D01
+A1026;Kabelverschraubung;M20 Kunststoff grau;Elektro;Stk;;D02
+A1027;Aderendhülse;1,5 mm² blau;Elektro;Stk;;D03
+A1028;Dichtring;20x30 mm Gummi;Dichtungen;Stk;;E01
+A1029;O-Ring;8 x 2 mm NBR;Dichtungen;Stk;;E01
+A1030;O-Ring;12x3 mm NBR;Dichtungen;Stk;;E01
+A1031;Flachdichtung;1/2 Zoll Faser;Dichtungen;Stk;;E02
+A1032;Schlauchschelle;20-32 mm Edelstahl;Verbindung;Stk;;E03
+A1033;Schlauchschelle;40-60 mm Edelstahl;Verbindung;Stk;;E03
+A1034;Kugellager;8x22x7 mm;Lager;Stk;;F01
+A1035;Kugellager;12 x 28 x 8 mm;Lager;Stk;;F01
+A1036;Blindniet;4x12 Aluminium;Verbinder;Stk;;F02
+A1037;Splint;3 x 25 mm Stahl;Verbinder;Stk;;F02
+A1038;Gewindestift Innensechskant;M6x10 Stahl;Schrauben;Stk;;A04
+A1039;Stopfen;20 x 20 mm Kunststoff schwarz;Profile;Stk;;C05
+A1040;Gummipuffer;M8 x 25 mm;Dämpfer;Stk;;F03

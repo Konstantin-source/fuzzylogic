@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    env_file: .env
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      OPENAI_EMBEDDING_DIMENSIONS: "${OPENAI_EMBEDDING_DIMENSIONS:-768}"
+      OPENAI_RERANK_MODEL: ${OPENAI_RERANK_MODEL:-gpt-6-luna}
+      OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-none}
+      ENABLE_LLM_RERANK_DEFAULT: "${ENABLE_LLM_RERANK_DEFAULT:-true}"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
