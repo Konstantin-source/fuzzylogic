@@ -6,6 +6,8 @@ from app import db, importer, search
 def database(tmp_path, monkeypatch):
     monkeypatch.setattr(db, 'DATA_DIR', tmp_path)
     monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+    monkeypatch.setenv('APP_USERNAME', 'test-user')
+    monkeypatch.setenv('APP_PASSWORD', 'test-password-long-enough')
     db.init()
 
 def test_csv_encoding_and_mapping():
@@ -76,6 +78,7 @@ def test_upload_search_api():
     from app.main import app
     import json
     with TestClient(app) as client:
+        client.auth = ('test-user', 'test-password-long-enough')
         content = b'Artikelnummer;Bezeichnung;Zusatztext\nX1;Winkel;20x40 mm\n'
         response = client.post('/api/preview', files={'file': ('catalog.csv', content, 'text/csv')})
         assert response.status_code == 200
@@ -144,3 +147,26 @@ def test_local_search_never_calls_api(monkeypatch):
     monkeypatch.setattr(ai, 'rerank', forbidden)
     results, mode = search.search('Winkel', rerank=True)
     assert mode == 'local' and results[0]['number'] == 'A1'
+
+
+def test_access_control_and_origin_checks():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app) as client:
+        for path in ('/', '/api/config', '/api/search?q=x', '/static/app.js'):
+            assert client.get(path).status_code == 401
+        assert client.get('/api/config', auth=('test-user', 'wrong')).status_code == 401
+        assert client.get('/api/config', auth=('test-user', 'test-password-long-enough')).status_code == 200
+        assert client.post('/api/preview', auth=('test-user', 'test-password-long-enough'), headers={'origin':'https://outside.invalid'}).status_code == 403
+        assert client.get('/api/config', auth=('test-user', 'test-password-long-enough'), headers={'sec-fetch-site':'cross-site'}).status_code == 403
+        assert client.get('/api/config', auth=('test-user', 'test-password-long-enough'), headers={'origin':'http://testserver'}).status_code == 200
+        assert client.get('/api/config', auth=('test-user', 'test-password-long-enough')).headers['x-frame-options'] == 'DENY'
+
+
+def test_missing_credentials_refuse_startup(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    monkeypatch.delenv('APP_PASSWORD')
+    with pytest.raises(RuntimeError, match='APP_USERNAME'):
+        with TestClient(app):
+            pass

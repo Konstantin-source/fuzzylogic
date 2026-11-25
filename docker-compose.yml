@@ -2,7 +2,7 @@ services:
   app:
     build: .
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"
     env_file: .env
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -13,4 +13,11 @@ services:
       ENABLE_LLM_RERANK_DEFAULT: "${ENABLE_LLM_RERANK_DEFAULT:-true}"
     volumes:
       - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped

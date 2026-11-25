@@ -12,14 +12,18 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from app import db, importer, openai_client as ai
 from app.search import normalize, search
+from app.security import credentials_configured, protect
 
 @asynccontextmanager
 async def lifespan(app):
+    if not credentials_configured():
+        raise RuntimeError('APP_USERNAME und ein APP_PASSWORD mit mindestens 16 Zeichen müssen gesetzt sein.')
     if ai.available():
         start_job()
     yield
 
-app = FastAPI(title='Artikelsuche', lifespan=lifespan)
+app = FastAPI(title='Artikelsuche', lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+app.middleware('http')(protect)
 app.mount('/static', StaticFiles(directory=Path(__file__).parent / 'static'), name='static')
 db.init()
 executor = ThreadPoolExecutor(max_workers=1)
