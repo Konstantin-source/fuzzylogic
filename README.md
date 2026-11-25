@@ -11,6 +11,10 @@ Eine lokale Webanwendung für die Suche in ERP-Artikellisten. SQLite, FTS5 und F
 
 Im Browser auf dem Server `http://localhost:8080` öffnen und mit den Zugangsdaten anmelden. Ohne korrekt gesetzte Zugangsdaten startet die App nicht. `APP_PORT` bestimmt den Host-Port; standardmäßig ist er nur auf `127.0.0.1` gebunden.
 
+### Portainer
+
+Für einen Git-basierten Portainer-Stack `docker-compose.portainer.yml` als Compose-Pfad wählen und die Werte aus `.env.example` in Portainer unter **Environment variables** setzen. Es wird keine `.env`-Datei auf dem Server benötigt. Die Variante verwendet ein separates Docker-Volume `artikelsuche_data` statt `./data`; vorhandene Daten werden nicht automatisch übernommen. Bei einem bestehenden Katalog vorher ein Backup erstellen und die Daten gezielt migrieren. Ein Build aus dem Git-Verzeichnis setzt voraus, dass die Portainer-Umgebung Builds unterstützt.
+
 ## Sicherer Betrieb im Netzwerk
 
 - Die Anmeldung verwendet HTTP Basic Authentication. Ohne HTTPS werden Benutzername, Passwort und Inhalte unverschlüsselt übertragen. Für den Zugriff anderer Geräte einen internen HTTPS-Reverse-Proxy mit gültigem Zertifikat und Zugriffsbeschränkung vor die App setzen. Den internen App-Port nicht direkt im LAN oder Internet freigeben. Der Proxy muss die `Authorization`- und `Host`-Header korrekt weiterleiten; sein Zugang zu Port 8080 muss zum gewählten Netzwerkaufbau passen.
