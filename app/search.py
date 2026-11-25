@@ -74,7 +74,7 @@ def search(query, category='', rerank=False, use_ai=False):
         by_id = {r['number']: r for r in rows}; candidates = [by_id[n] for n in ordered[:20] if n in by_id]
         if rerank and mode == 'semantic' and candidates:
             try:
-                items = ai.rerank(query, [{k:r[k] for k in ('number','name','extra','category')} for r in candidates[:15]])
+                items = ai.rerank(query, [{k:r[k] for k in ('number','name','extra','category','matchcode','width','height','length')} for r in candidates[:15]])
                 ranked = validate_ranking(items, candidates[:15], conn)
                 if ranked: return ranked, 'ai'
             except Exception: mode = 'local'

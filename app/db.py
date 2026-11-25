@@ -20,6 +20,10 @@ def init():
         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE VIRTUAL TABLE IF NOT EXISTS article_fts USING fts5(number UNINDEXED, search_text, tokenize='unicode61 remove_diacritics 2');
         ''')
+        article_columns = {row['name'] for row in db.execute('PRAGMA table_info(articles)')}
+        for name in ('matchcode', 'width', 'height', 'length'):
+            if name not in article_columns:
+                db.execute(f"ALTER TABLE articles ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
         columns = {row['name'] for row in db.execute('PRAGMA table_info(embeddings)')}
         if not {'provider', 'dimensions'} <= columns:
             db.execute('BEGIN IMMEDIATE')

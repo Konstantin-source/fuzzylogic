@@ -170,3 +170,51 @@ def test_missing_credentials_refuse_startup(monkeypatch):
     with pytest.raises(RuntimeError, match='APP_USERNAME'):
         with TestClient(app):
             pass
+
+
+def test_selectline_columns_and_searchable_fields():
+    content = ('Artikelnummer;EANNummer;Bezeichnung;Zusatz;Matchcode;Artikelgruppe;Mengeneinheit;_BREITE;_HOEHE;_LAENGE\n'
+               'S001;0123456789012;Profil;Aluminium;Eckprofil;Profile;Stk;20,000;40,000;0\n').encode('utf-8-sig')
+    columns, rows = importer.parse('catalog.csv', content)
+    mapping = importer.suggest(columns)
+    assert {name: mapping[name] for name in ('ean', 'category', 'unit', 'matchcode', 'width', 'height', 'length')} == {
+        'ean':'EANNummer', 'category':'Artikelgruppe', 'unit':'Mengeneinheit', 'matchcode':'Matchcode',
+        'width':'_BREITE', 'height':'_HOEHE', 'length':'_LAENGE'}
+    assert importer.import_rows(columns, rows, mapping) == 1
+    with db.connect() as conn:
+        article = conn.execute('SELECT * FROM articles').fetchone()
+        assert article['ean'] == '0123456789012'
+        assert article['category'] == 'Profile'
+        assert article['unit'] == 'Stk'
+        assert '20x40' in article['search_text']
+    for query in ('Eckprofil', '0123456789012', '20x40'):
+        results, _ = search.search(query)
+        assert results[0]['number'] == 'S001'
+
+
+def test_synonym_preserves_selectline_search_fields():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    columns, rows = importer.parse('catalog.csv', b'Artikelnummer;Bezeichnung;Matchcode;_BREITE;_HOEHE\nS001;Profil;Eckprofil;20;40\n')
+    importer.import_rows(columns, rows, importer.suggest(columns))
+    with TestClient(app) as client:
+        response = client.post('/api/articles/S001/synonyms', auth=('test-user', 'test-password-long-enough'), json={'term':'Kurzprofil'})
+        assert response.status_code == 200
+    for query in ('Eckprofil', '20x40', 'Kurzprofil'):
+        results, _ = search.search(query)
+        assert results[0]['number'] == 'S001'
+    with db.connect() as conn:
+        row = conn.execute('SELECT search_text FROM articles WHERE number=?', ('S001',)).fetchone()
+        assert all(term in row['search_text'] for term in ('Eckprofil', '20x40', 'Kurzprofil'))
+
+
+def test_existing_catalog_schema_is_migrated():
+    with db.connect() as conn:
+        conn.execute('DROP TABLE articles')
+        conn.execute("CREATE TABLE articles (number TEXT PRIMARY KEY, name TEXT NOT NULL, extra TEXT NOT NULL, category TEXT NOT NULL, unit TEXT NOT NULL, ean TEXT NOT NULL, location TEXT NOT NULL, search_text TEXT NOT NULL, hash TEXT NOT NULL)")
+        conn.execute("INSERT INTO articles VALUES ('S001','Profil','','','','','','Profil','hash')")
+    db.init()
+    with db.connect() as conn:
+        row = conn.execute('SELECT * FROM articles WHERE number=?', ('S001',)).fetchone()
+        assert row['name'] == 'Profil'
+        assert all(row[field] == '' for field in ('matchcode', 'width', 'height', 'length'))

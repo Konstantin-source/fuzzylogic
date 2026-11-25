@@ -4,10 +4,33 @@ import io
 import json
 import re
 import unicodedata
+from decimal import Decimal
 from openpyxl import load_workbook
 from app import db
 
-FIELDS = {'number': ['artikelnummer','artnr','artikelnr','artikel nr','sku','nummer'], 'name': ['bezeichnung','artikelbezeichnung','name','beschreibung'], 'extra': ['zusatztext','zusatz','langtext','masse','maße'], 'category': ['warengruppe','gruppe','kategorie'], 'unit': ['einheit','me'], 'ean': ['ean','gtin','barcode'], 'location': ['lagerort','lagerplatz','ort']}
+FIELDS = {
+    'number': ['artikelnummer', 'artnr', 'artikelnr', 'artikel nr', 'sku', 'nummer'],
+    'name': ['bezeichnung', 'artikelbezeichnung', 'name', 'beschreibung'],
+    'extra': ['zusatztext', 'zusatz', 'langtext', 'masse', 'maße'],
+    'category': ['warengruppe', 'artikelgruppe', 'gruppe', 'kategorie'],
+    'unit': ['einheit', 'mengeneinheit', 'me'],
+    'ean': ['ean', 'eannummer', 'gtin', 'barcode'],
+    'location': ['lagerort', 'lagerplatz', 'ort'],
+    'matchcode': ['matchcode'],
+    'width': ['breite'],
+    'height': ['hoehe', 'höhe'],
+    'length': ['laenge', 'länge'],
+}
+
+def article_search_text(values, terms=()):
+    parts = [values[field] for field in FIELDS]
+    # A combined dimension is useful only when at least two fields have values.
+    dims = [values[field] for field in ('width', 'height', 'length')]
+    dims = [Decimal(value.replace(',', '.')) for value in dims if re.fullmatch(r'\d+(?:[.,]\d+)?', value)]
+    dims = [format(value.normalize(), 'f') for value in dims if value > 0]
+    if len(dims) >= 2:
+        parts.append('x'.join(dims))
+    return ' '.join([*parts, *terms])
 
 def key(s):
     return re.sub(r'[^a-z0-9]', '', unicodedata.normalize('NFKD', s.casefold()).encode('ascii', 'ignore').decode())
@@ -42,7 +65,7 @@ def mapping_for(columns):
     signature = json.dumps(columns, ensure_ascii=False)
     with db.connect() as conn:
         row = conn.execute('SELECT value FROM settings WHERE key=?', ('mapping:' + signature,)).fetchone()
-    return json.loads(row['value']) if row else suggest(columns)
+    return {**suggest(columns), **json.loads(row['value'])} if row else suggest(columns)
 
 def import_rows(columns, records, mapping):
     if not mapping.get('number') or not mapping.get('name') or any(v and v not in columns for v in mapping.values()):
@@ -57,14 +80,14 @@ def import_rows(columns, records, mapping):
             if not number or not values['name']: raise ValueError('Jeder Artikel benötigt Artikelnummer und Bezeichnung.')
             if number in seen: raise ValueError('Artikelnummern müssen eindeutig sein.')
             seen.add(number)
-            search_text = ' '.join([*values.values(), *syn.get(number, [])])
+            search_text = article_search_text(values, syn.get(number, []))
             from app.search import normalize
             digest = hashlib.sha256(normalize(search_text).encode()).hexdigest()
-            articles.append((*values.values(), search_text, digest))
+            articles.append(tuple(values[field] for field in FIELDS) + (search_text, digest))
         if not articles: raise ValueError('Keine Artikel gefunden.')
         conn.execute('DELETE FROM article_fts')
         conn.execute('DELETE FROM articles')
-        conn.executemany('INSERT INTO articles VALUES (?,?,?,?,?,?,?,?,?)', articles)
-        conn.executemany('INSERT INTO article_fts(number, search_text) VALUES (?,?)', [(a[0], a[7]) for a in articles])
+        conn.executemany('INSERT INTO articles (number,name,extra,category,unit,ean,location,matchcode,width,height,length,search_text,hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', articles)
+        conn.executemany('INSERT INTO article_fts(number, search_text) VALUES (?,?)', [(a[0], a[-2]) for a in articles])
         conn.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', ('mapping:' + json.dumps(columns, ensure_ascii=False), json.dumps(mapping, ensure_ascii=False)))
     return len(articles)

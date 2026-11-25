@@ -109,7 +109,7 @@ def add_synonym(number: str, body: Synonym):
         if not row: raise HTTPException(404, 'Artikel nicht gefunden.')
         conn.execute('INSERT OR IGNORE INTO synonyms VALUES (?,?)', (number, term))
         terms = [r[0] for r in conn.execute('SELECT term FROM synonyms WHERE number=? ORDER BY term', (number,))]
-        text = ' '.join([row[k] for k in ('number','name','extra','category','unit','ean','location')] + terms)
+        text = importer.article_search_text(row, terms)
         digest = hashlib.sha256(normalize(text).encode()).hexdigest()
         conn.execute('UPDATE articles SET search_text=?, hash=? WHERE number=?', (text,digest,number))
         conn.execute('DELETE FROM article_fts WHERE number=?', (number,))
