@@ -258,7 +258,7 @@ def test_ai_terms_search_catalog_and_reject_invented_articles(monkeypatch):
         {'number':'NOT-IN-CATALOG','confidence':'hoch','reason':'erfunden'},
         {'number':'A2','confidence':'mittel','reason':'Rahmen'}])
     response = search.ai_search('schwarzer Rahmen für Keilrahmen', rerank=True)
-    assert response['terms'] == ['Schattenfugenrahmen']
+    assert response['terms'][:2] == ['Schattenfugenrahmen schwarz', 'Schattenfuge schwarz']
     assert response['results'][0]['number'] == 'A2'
     assert 'NOT-IN-CATALOG' not in [item['number'] for item in response['results']]
     monkeypatch.setattr(ai, 'expand_query', lambda q: ['Keilrahmenleiste'])
@@ -276,6 +276,29 @@ def test_ai_terms_failure_keeps_local_search(monkeypatch):
     assert response['mode'] == 'local' and response['results'] == []
     results, mode = search.search('Winkel')
     assert mode == 'local' and results[0]['number'] == 'A1'
+
+
+def test_frame_relationship_works_even_when_model_misses_it(monkeypatch):
+    from app import openai_client as ai
+    columns, rows = importer.parse('catalog.csv', ('Artikelnummer;Bezeichnung;Zusatz\n'
+        'A1;Keilrahmenleiste;schwarz\nA2;Schattenfugenrahmen;schwarz\n').encode())
+    importer.import_rows(columns, rows, importer.suggest(columns))
+    monkeypatch.setattr(ai, 'available', lambda: True)
+    monkeypatch.setattr(ai, 'expand_query', lambda query: ['Keilrahmenleisten-Rahmen schwarz', 'Keilrahmenrahmen schwarz', 'Keilrahmenleisten Verbinder schwarz'])
+    result = search.ai_search('schwarzer rahmen für keilrahmenleiste')
+    assert result['terms'][0] == 'Schattenfugenrahmen schwarz'
+    assert 'A2' in [row['number'] for row in result['results']]
+    assert search.related_search_terms('schwarze Keilrahmenleiste') == []
+
+
+def test_frame_relationship_remains_available_offline(monkeypatch):
+    from app import openai_client as ai
+    columns, rows = importer.parse('catalog.csv', b'Artikelnummer;Bezeichnung\nA1;Schattenfugenrahmen\n')
+    importer.import_rows(columns, rows, importer.suggest(columns))
+    monkeypatch.setattr(ai, 'available', lambda: False)
+    result = search.ai_search('Rahmen für Keilrahmen')
+    assert result['mode'] == 'local'
+    assert result['results'][0]['number'] == 'A1'
 
 
 def test_generated_search_terms_are_bounded(monkeypatch):
@@ -344,3 +367,18 @@ def test_catalog_reimport_invalidates_cached_vector_index(monkeypatch):
     importer.import_rows(columns, rows, importer.suggest(columns))
     with db.connect() as conn:
         assert search.embedding_index(conn)[1] == {}
+
+
+def test_reranking_keeps_related_frame_visible(monkeypatch):
+    from app import openai_client as ai
+    data = 'Artikelnummer;Bezeichnung;Zusatz\n' + ''.join(f'K{i};Keilrahmenleiste;schwarz\n' for i in range(12)) + 'R1;Schattenfugenrahmen;schwarz\n'
+    columns, rows = importer.parse('catalog.csv', data.encode())
+    importer.import_rows(columns, rows, importer.suggest(columns))
+    monkeypatch.setattr(ai, 'available', lambda: True)
+    monkeypatch.setattr(ai, 'expand_query', lambda q: ['Keilrahmenleiste schwarz'])
+    monkeypatch.setattr(ai, 'rerank', lambda q, candidates: [
+        {'number':item['number'], 'confidence':'mittel', 'reason':'Leiste'}
+        for item in candidates if item['number'].startswith('K')][:8])
+    result = search.ai_search('schwarzer rahmen für keilrahmenleiste', rerank=True)
+    assert 'R1' in [row['number'] for row in result['results'][:4]]
+    assert next(row for row in result['results'] if row['number'] == 'R1')['confidence'] == 'unsicher'

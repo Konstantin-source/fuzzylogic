@@ -44,6 +44,15 @@ def normalize(text):
 def dimensions(text):
     return set(re.findall(r'\b(?:m)?\d+(?:x\d+)+\b', normalize(text)))
 
+def related_search_terms(query):
+    """Narrow, directional hints for common product-use relationships."""
+    text = normalize(query)
+    if re.search(r'\brahmen\b.{0,60}\b(?:fuer|um)\b.{0,40}\bkeilrahmen\w*\b', text):
+        # Preserve a specified colour; this relationship is a suggestion, not an assertion.
+        colour = ' schwarz' if re.search(r'\bschwarz\w*\b', text) else ''
+        return ['Schattenfugenrahmen' + colour, 'Schattenfuge' + colour]
+    return []
+
 def rrf(*rankings, k=60):
     scores = {}
     for ranking in rankings:
@@ -88,14 +97,26 @@ def validate_ranking(items, candidates, conn):
 
 def ai_search(query, category='', rerank=False):
     """Search the catalog using generated terms; generated text is never treated as an article."""
-    if not ai.available():
-        return {'results': [], 'terms': [], 'mode': 'local', 'message': 'KI-Suche nicht verfügbar. Lokale Treffer bleiben sichtbar.'}
-    try:
-        terms = ai.expand_query(query)
-    except Exception:
-        return {'results': [], 'terms': [], 'mode': 'local', 'message': 'KI-Suchbegriffe konnten nicht erstellt werden. Lokale Treffer bleiben sichtbar.'}
+    hints = related_search_terms(query)
+    available = ai.available()
+    generated = []
+    failed = False
+    if available:
+        try:
+            generated = ai.expand_query(query)
+        except Exception:
+            failed = True
+    terms, seen_terms = [], set()
+    for term in hints + generated:
+        normalized = normalize(term)
+        if normalized and normalized not in seen_terms:
+            terms.append(term)
+            seen_terms.add(normalized)
     if not terms:
-        return {'results': [], 'terms': [], 'mode': 'local', 'message': 'Die KI hat keine zusätzlichen Suchbegriffe gefunden.'}
+        message = ('KI-Suche nicht verfügbar. Lokale Treffer bleiben sichtbar.' if not available or failed
+                   else 'Die KI hat keine zusätzlichen Suchbegriffe gefunden.')
+        return {'results': [], 'terms': [], 'mode': 'local', 'message': message}
+    notice = 'KI nicht erreichbar; verwandte Begriffe werden lokal gesucht.' if not available or failed else ''
     with db.connect() as conn:
         rows = [dict(r) for r in conn.execute('SELECT * FROM articles' + (' WHERE category=?' if category else ''), (category,) if category else ())]
         by_id = {row['number']: row for row in rows}
@@ -115,12 +136,13 @@ def ai_search(query, category='', rerank=False):
             pool = [by_id[number] for number in found if number in by_id]
             rankings.append(local_rank(term, pool, found)[:15])
         # Preserve a semantic route for the user's original wording if indexed.
-        try:
-            semantic = semantic_rank(conn, rows, query)
-            if semantic:
-                rankings.append(semantic[:20])
-        except Exception:
-            pass  # Generated search terms still work when embeddings are unavailable.
+        if available and not failed:
+            try:
+                semantic = semantic_rank(conn, rows, query)
+                if semantic:
+                    rankings.append(semantic[:20])
+            except Exception:
+                pass  # Generated search terms still work when embeddings are unavailable.
         # Interleave independently retrieved lists so one wording cannot hide all others.
         ordered, seen = [], set()
         for position in range(max((len(r) for r in rankings), default=0)):
@@ -136,17 +158,24 @@ def ai_search(query, category='', rerank=False):
                 break
         candidates = [by_id[number] for number in ordered]
         plain = [{**row, 'confidence': 'unsicher', 'reason': ''} for row in candidates]
-        if rerank and candidates:
+        if rerank and candidates and available and not failed:
             try:
                 fields = ('number','name','extra','category','matchcode','width','height','length')
                 items = ai.rerank(query, [{k:row[k] for k in fields} for row in candidates[:15]])
                 ranked = validate_ranking(items, candidates[:15], conn)
                 ranked_ids = {row['number'] for row in ranked}
                 if ranked:
-                    return {'results': ranked + [row for row in plain if row['number'] not in ranked_ids], 'terms': terms, 'mode': 'ai', 'message': ''}
+                    ordered_results = ranked + [row for row in plain if row['number'] not in ranked_ids]
+                    # Keep a locally suggested relationship visible even if the LLM omits it.
+                    if hints and rankings and rankings[0]:
+                        suggested_id = rankings[0][0]
+                        suggested = next((row for row in ordered_results if row['number'] == suggested_id), None)
+                        if suggested and suggested_id not in {row['number'] for row in ordered_results[:4]}:
+                            ordered_results = [suggested] + [row for row in ordered_results if row['number'] != suggested_id]
+                    return {'results': ordered_results, 'terms': terms, 'mode': 'ai', 'message': notice}
             except Exception:
                 return {'results': plain, 'terms': terms, 'mode': 'terms', 'message': 'KI-Sortierung nicht verfügbar; Treffer bitte prüfen.'}
-        return {'results': plain, 'terms': terms, 'mode': 'terms', 'message': ''}
+        return {'results': plain, 'terms': terms, 'mode': 'terms' if available and not failed else 'local', 'message': notice}
 
 def search(query, category='', rerank=False, use_ai=False):
     with db.connect() as conn:

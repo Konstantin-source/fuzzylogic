@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function startApp() {
+function startApp(aiResponse = {results: [], terms: ['Schattenfugenrahmen'], mode: 'terms', message: ''}) {
   const elements = new Map();
   const documentHandlers = {};
   const requests = [];
@@ -13,8 +13,9 @@ function startApp() {
     if (!elements.has(id)) {
       elements.set(id, {
         value: '', checked: false, open: false, tagName: 'DIV',
-        handlers: {}, children: [], classList: {toggle() {}, remove() {}},
+        handlers: {}, children: [], attributes: {}, classList: {toggle() {}, remove() {}},
         addEventListener(name, handler) { this.handlers[name] = handler; },
+        setAttribute(name, value) { this.attributes[name] = value; },
         replaceChildren(...children) { this.children = children; }, append(...children) { this.children.push(...children); }, querySelector() { return null; }, focus() {},
       });
     }
@@ -35,7 +36,7 @@ function startApp() {
       return {ok: true, json: async () => url === '/api/config'
         ? {count: 0, rerank_default: false, categories: []}
         : String(url).startsWith('/api/ai-search?')
-          ? {results: [], terms: ['Schattenfugenrahmen'], mode: 'terms', message: ''}
+          ? aiResponse
           : {results: [], mode: 'local'}};
     },
     setTimeout(fn) { const id=++nextTimer; timers.set(id,fn); return id; },
@@ -83,4 +84,21 @@ test('AI panel presents generated search terms separately', async () => {
   assert.equal(app.element('ai-panel').hidden, false);
   assert.equal(app.element('ai-terms').children[0].textContent, 'Schattenfugenrahmen');
   assert.equal(app.element('status').textContent, 'KI-Suche aktiv');
+});
+
+test('AI panel can be collapsed and extra results revealed', async () => {
+  const html = fs.readFileSync('app/static/index.html', 'utf8');
+  assert.match(html, /<details id="ai-panel"/);
+  assert.match(html, /<summary class="ai-heading">/);
+  const items = Array.from({length: 6}, (_, i) => ({number: `A${i}`, name: 'Rahmen', confidence: 'unsicher'}));
+  const app = startApp({results: items, terms: ['Rahmen'], mode:'terms', message:''});
+  app.element('query').value = 'Rahmen';
+  app.element('submit-search').onclick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.element('ai-results').children.length, 4);
+  assert.equal(app.element('ai-more').hidden, false);
+  assert.equal(app.element('ai-more').attributes['aria-expanded'], 'false');
+  app.element('ai-more').onclick();
+  assert.equal(app.element('ai-results').children.length, 6);
+  assert.equal(app.element('ai-more').attributes['aria-expanded'], 'true');
 });
