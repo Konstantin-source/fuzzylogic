@@ -6,6 +6,8 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && mkdir /app/data \
     && chown appuser /app/data
 COPY app ./app
+COPY extension ./extension
+COPY tools/evaluate_search.py tools/search_cases.json ./tools/
 COPY sample_data ./sample_data
 ENV DATA_DIR=/app/data PYTHONUNBUFFERED=1
 USER 10001

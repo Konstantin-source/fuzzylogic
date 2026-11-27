@@ -8,12 +8,77 @@ async function config() { const c = await (await fetch('/api/config')).json(); $
 function history() { const box = $('history'); box.replaceChildren(); let h=[]; try{h=JSON.parse(localStorage.getItem('searchHistory')||'[]')}catch{}; h.forEach(s => { const b=el('button',s); b.onclick=()=>{query.value=s;runSearch()}; box.append(b) }); }
 function saveHistory(s) { try { let h=JSON.parse(localStorage.getItem('searchHistory')||'[]'); localStorage.setItem('searchHistory',JSON.stringify([s,...h.filter(x=>x!==s)].slice(0,5))); history(); } catch {} }
 async function copy(number, button) { let ok=false; try { if(navigator.clipboard && window.isSecureContext){await navigator.clipboard.writeText(number);ok=true} } catch {} if(!ok){const t=el('textarea');t.value=number;t.style.position='fixed';t.style.opacity='0';document.body.append(t);t.select();try{ok=document.execCommand('copy')}catch{}t.remove()} button.textContent=ok?'Kopiert ✓':'Kopieren fehlgeschlagen';button.classList.toggle('copied',ok);setTimeout(()=>{button.textContent=number+'  ⧉';button.classList.remove('copied')},1800); }
-function render(items,target=results){target.replaceChildren(); if(target===results)topNumber=items[0]?.number||''; if(!items.length){target.append(el('div','Keine passenden Artikel gefunden.','empty'));return} for(const item of items){const card=el('article',undefined,'card'), top=el('div',undefined,'cardtop'), button=el('button',item.number+'  ⧉','copy');button.onclick=()=>copy(item.number,button);top.append(button,el('span',item.confidence,'badge '+item.confidence));card.append(top,el('h3',item.name||'Ohne Bezeichnung'));if(item.extra)card.append(el('p',item.extra));const measures=[['Breite',item.width],['Höhe',item.height],['Länge',item.length]].filter(([,v])=>v).map(([k,v])=>k+': '+v);if(measures.length)card.append(el('p',measures.join(' · ')));if(item.reason)card.append(el('p',item.reason));if(item.confidence==='unsicher')card.append(el('p','Unsicher – bitte Maße/Bezeichnung prüfen','uncertain'));const foot=el('div',undefined,'cardfooter'), remember=el('button','＋ Begriff merken','link');remember.onclick=async()=>{const term=prompt('Welchen Begriff möchtest du für diesen Artikel merken?');if(!term?.trim())return;const r=await fetch('/api/articles/'+encodeURIComponent(item.number)+'/synonyms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({term:term.trim()})});if(!r.ok){alert('Begriff konnte nicht gespeichert werden.');return}const data=await r.json();poll(data.job);runSearch()};foot.append(el('span',item.category||'Ohne Warengruppe'),remember);card.append(foot);target.append(card)}}
+function groupVariants(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = JSON.stringify(item.variant_key?.length ? item.variant_key : [item.number]);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  return [...groups.values()];
+}
+function remember(item, scope) {
+  const family = scope === 'family';
+  const button = el('button', family ? 'Für Familie merken' : 'Für Artikel merken', 'link');
+  button.onclick = async () => {
+    const target = family ? 'die Familie „' + item.family + '“' : 'Artikel ' + item.number;
+    const term = prompt('Welchen Begriff möchtest du für ' + target + ' merken?', query.value.trim());
+    if (!term?.trim()) return;
+    try {
+      const response = await fetch('/api/articles/' + encodeURIComponent(item.number) + '/synonyms', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({term:term.trim(), scope})
+      });
+      if (!response.ok) throw Error();
+      const data = await response.json();
+      if (data.job) poll(data.job);
+      await runSearch();
+    } catch { alert('Begriff konnte nicht gespeichert werden.'); }
+  };
+  return button;
+}
+function articleCard(item) {
+  const card = el('article', undefined, 'card');
+  const top = el('div', undefined, 'cardtop');
+  const button = el('button', item.number + '  ⧉', 'copy');
+  button.onclick = () => copy(item.number, button);
+  top.append(button, el('span', item.confidence, 'badge ' + item.confidence));
+  card.append(top, el('h3', item.name || 'Ohne Bezeichnung'));
+  if (item.extra) card.append(el('p', item.extra));
+  const axes = [['Breite',item.width], ['Höhe',item.height], ['Länge',item.length]];
+  const measures = axes.filter(([,v]) => v).map(([k,v]) => k + ': ' + v);
+  if (measures.length) card.append(el('p', measures.join(' · ')));
+  if (item.reason) card.append(el('p', item.reason));
+  if (item.confidence === 'unsicher') card.append(el('p', 'Maße und Bezeichnung prüfen', 'uncertain'));
+  const foot = el('div', undefined, 'cardfooter');
+  foot.append(el('span', item.category || ''), remember(item, 'article'));
+  if (item.family) foot.append(remember(item, 'family'));
+  card.append(foot);
+  return card;
+}
+function render(items, target=results, limit=Infinity) {
+  target.replaceChildren();
+  if (target === results) topNumber = items[0]?.number || '';
+  if (!items.length) {
+    target.append(el('div','Keine passenden Artikel gefunden.','empty'));
+    return;
+  }
+  for (const [first, ...others] of groupVariants(items).slice(0, limit)) {
+    const card = articleCard(first);
+    if (others.length) {
+      const details = el('details', undefined, 'variants');
+      details.append(el('summary', others.length === 1 ? 'Eine weitere Variante' : others.length + ' weitere Varianten'));
+      for (const item of others) details.append(articleCard(item));
+      card.append(details);
+    }
+    target.append(card);
+  }
+}
 function renderAIResults(){
-  render(aiShowingAll ? aiItems : aiItems.slice(0,4), $('ai-results'));
+  render(aiItems, $('ai-results'), aiShowingAll ? Infinity : 4);
+  const count = groupVariants(aiItems).length;
   const button=$('ai-more');
-  button.hidden=aiItems.length<=4;
-  button.textContent=aiShowingAll?'Weniger anzeigen':`Alle ${aiItems.length} Treffer anzeigen`;
+  button.hidden=count<=4;
+  button.textContent=aiShowingAll?'Weniger anzeigen':`Alle ${count} Treffer anzeigen`;
   button.setAttribute('aria-expanded', String(aiShowingAll));
 }
 $('ai-more').onclick=()=>{aiShowingAll=!aiShowingAll;renderAIResults()};
@@ -62,4 +127,6 @@ $('open-import').onclick=()=>dialog.showModal();$('file').onchange=e=>preview(e.
 async function preview(file){if(!file)return;currentFile=file;$('error').textContent='';$('import').disabled=true;const form=new FormData();form.append('file',file);try{const r=await fetch('/api/preview',{method:'POST',body:form});const data=await r.json();if(!r.ok)throw Error(data.detail);columns=data.columns;$('file-info').textContent=`${file.name} · ${data.count} Zeilen`;$('mapping').replaceChildren();for(const [field,label] of Object.entries(labels)){const l=el('label',label),s=el('select');s.id='map-'+field;s.append(new Option('Nicht zugeordnet',''),...columns.map(c=>new Option(c,c)));s.value=data.mapping[field]||'';l.append(s);$('mapping').append(l)}$('import').disabled=false}catch(e){$('error').textContent=e.message||'Datei konnte nicht gelesen werden.'}}
 $('import').onclick=async()=>{const mapping={};for(const field of Object.keys(labels))mapping[field]=$('map-'+field).value;const form=new FormData();form.append('file',currentFile);form.append('mapping',JSON.stringify(mapping));$('import').disabled=true;$('error').textContent='';try{const r=await fetch('/api/import',{method:'POST',body:form});const data=await r.json();if(!r.ok)throw Error(data.detail);$('file-info').textContent=`${data.count} Artikel importiert${data.without_name ? ` · ${data.without_name} ohne Bezeichnung` : ''}`;await config();poll(data.job);runSearch()}catch(e){$('error').textContent=e.message||'Import fehlgeschlagen.';$('import').disabled=false}};
 async function poll(job){$('progress-wrap').hidden=false;try{const r=await fetch('/api/jobs/'+job);const j=await r.json();$('progress').value=j.total?100*j.done/j.total:(j.status==='done'?100:0);$('progress-text').textContent=j.message+(j.total?` ${j.done}/${j.total}`:'');if(j.status==='running')setTimeout(()=>poll(job),700);else $('import').disabled=false}catch{$('progress-text').textContent='Status nicht erreichbar.'}}
+$('compact').onclick = () => window.open('/?kompakt=1', 'artikelkatalog', 'popup,width=490,height=760');
+if (new URLSearchParams(window.location?.search).has('kompakt')) document.body.classList.add('compact');
 config();history();

@@ -1,16 +1,19 @@
 import hashlib
+import io
 import json
 import os
 import threading
 import uuid
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from app import db, importer, openai_client as ai
+from app import db, families, importer, openai_client as ai
 from app.search import normalize, search, ai_search, invalidate_embedding_cache
 from app.security import credentials_configured, protect
 
@@ -32,6 +35,17 @@ lock = threading.Lock()
 
 @app.get('/')
 def index(): return FileResponse(Path(__file__).parent / 'static' / 'index.html')
+
+
+@app.get('/browser-erweiterung.zip')
+def browser_extension():
+    directory = Path(__file__).resolve().parents[1] / 'extension'
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:
+        for filename in ('manifest.json', 'worker.js', 'panel.html', 'panel.css', 'panel.js'):
+            bundle.write(directory / filename, filename)
+    return Response(archive.getvalue(), media_type='application/zip',
+                    headers={'Content-Disposition':'attachment; filename="artikelsuche-erweiterung.zip"'})
 
 @app.get('/api/config')
 def config():
@@ -95,8 +109,7 @@ def job(job_id: str):
 def do_search(q: str, category: str = '', rerank: bool = False, use_ai: bool = False):
     if not q.strip() or len(q) > 300: return {'results': [], 'mode':'local'}
     results, mode = search(q, category, rerank, use_ai)
-    for r in results:
-        r.pop('hash', None); r.pop('search_text', None)
+    families.prepare_results(results, q)
     return {'results':results, 'mode':mode}
 
 @app.get('/api/ai-search')
@@ -104,13 +117,12 @@ def do_ai_search(q: str, category: str = '', rerank: bool = False):
     if not q.strip() or len(q) > 300:
         return {'results': [], 'terms': [], 'mode': 'local', 'message': ''}
     response = ai_search(q, category, rerank)
-    for row in response['results']:
-        row.pop('hash', None)
-        row.pop('search_text', None)
+    families.prepare_results(response['results'], q)
     return response
 
 class Synonym(BaseModel):
     term: str = Field(min_length=1, max_length=200)
+    scope: Literal['article', 'family'] = 'article'
 
 @app.post('/api/articles/{number}/synonyms')
 def add_synonym(number: str, body: Synonym):
@@ -119,6 +131,11 @@ def add_synonym(number: str, body: Synonym):
     with lock, db.connect() as conn:
         row = conn.execute('SELECT * FROM articles WHERE number=?', (number,)).fetchone()
         if not row: raise HTTPException(404, 'Artikel nicht gefunden.')
+        if body.scope == 'family':
+            if not row['family']:
+                raise HTTPException(400, 'Für diesen Artikel ist keine Produktfamilie bekannt.')
+            conn.execute('INSERT OR IGNORE INTO family_terms VALUES (?,?)', (row['family'], term))
+            return {'family': row['family']}
         conn.execute('INSERT OR IGNORE INTO synonyms VALUES (?,?)', (number, term))
         terms = [r[0] for r in conn.execute('SELECT term FROM synonyms WHERE number=? ORDER BY term', (number,))]
         text = importer.article_search_text(row, terms)

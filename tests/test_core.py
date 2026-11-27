@@ -253,7 +253,7 @@ def test_ai_terms_search_catalog_and_reject_invented_articles(monkeypatch):
         'A3;Unterlegscheibe;Stahl;Scheiben\n').encode())
     importer.import_rows(columns, rows, importer.suggest(columns))
     monkeypatch.setattr(ai, 'available', lambda: True)
-    monkeypatch.setattr(ai, 'expand_query', lambda q: ['Schattenfugenrahmen'])
+    monkeypatch.setattr(ai, 'expand_query', lambda q, families: ['Schattenfugenrahmen'])
     monkeypatch.setattr(ai, 'rerank', lambda q, candidates: [
         {'number':'NOT-IN-CATALOG','confidence':'hoch','reason':'erfunden'},
         {'number':'A2','confidence':'mittel','reason':'Rahmen'}])
@@ -261,7 +261,7 @@ def test_ai_terms_search_catalog_and_reject_invented_articles(monkeypatch):
     assert response['terms'][:2] == ['Schattenfugenrahmen schwarz', 'Schattenfuge schwarz']
     assert response['results'][0]['number'] == 'A2'
     assert 'NOT-IN-CATALOG' not in [item['number'] for item in response['results']]
-    monkeypatch.setattr(ai, 'expand_query', lambda q: ['Keilrahmenleiste'])
+    monkeypatch.setattr(ai, 'expand_query', lambda q, families: ['Keilrahmenleiste'])
     filtered = search.ai_search('schwarzer Rahmen für Keilrahmen', category='Leisten', rerank=False)
     assert [item['number'] for item in filtered['results']] == ['A1']
 
@@ -270,7 +270,7 @@ def test_ai_terms_failure_keeps_local_search(monkeypatch):
     from app import openai_client as ai
     load()
     monkeypatch.setattr(ai, 'available', lambda: True)
-    def fail(query): raise RuntimeError('offline')
+    def fail(query, families): raise RuntimeError('offline')
     monkeypatch.setattr(ai, 'expand_query', fail)
     response = search.ai_search('Winkel')
     assert response['mode'] == 'local' and response['results'] == []
@@ -284,7 +284,7 @@ def test_frame_relationship_works_even_when_model_misses_it(monkeypatch):
         'A1;Keilrahmenleiste;schwarz\nA2;Schattenfugenrahmen;schwarz\n').encode())
     importer.import_rows(columns, rows, importer.suggest(columns))
     monkeypatch.setattr(ai, 'available', lambda: True)
-    monkeypatch.setattr(ai, 'expand_query', lambda query: ['Keilrahmenleisten-Rahmen schwarz', 'Keilrahmenrahmen schwarz', 'Keilrahmenleisten Verbinder schwarz'])
+    monkeypatch.setattr(ai, 'expand_query', lambda query, families: ['Keilrahmenleisten-Rahmen schwarz', 'Keilrahmenrahmen schwarz', 'Keilrahmenleisten Verbinder schwarz'])
     result = search.ai_search('schwarzer rahmen für keilrahmenleiste')
     assert result['terms'][0] == 'Schattenfugenrahmen schwarz'
     assert 'A2' in [row['number'] for row in result['results']]
@@ -345,7 +345,7 @@ def test_ai_search_api_returns_catalog_data_only(monkeypatch):
     importer.import_rows(columns, rows, importer.suggest(columns))
     with TestClient(app) as client:
         monkeypatch.setattr(ai, 'available', lambda: True)
-        monkeypatch.setattr(ai, 'expand_query', lambda query: ['Schattenfugenrahmen'])
+        monkeypatch.setattr(ai, 'expand_query', lambda query, families: ['Schattenfugenrahmen'])
         response = client.get('/api/ai-search', params={'q':'Rahmen für Keilrahmen'}, auth=('test-user', 'test-password-long-enough'))
     assert response.status_code == 200
     item = response.json()['results'][0]
@@ -375,7 +375,7 @@ def test_reranking_keeps_related_frame_visible(monkeypatch):
     columns, rows = importer.parse('catalog.csv', data.encode())
     importer.import_rows(columns, rows, importer.suggest(columns))
     monkeypatch.setattr(ai, 'available', lambda: True)
-    monkeypatch.setattr(ai, 'expand_query', lambda q: ['Keilrahmenleiste schwarz'])
+    monkeypatch.setattr(ai, 'expand_query', lambda q, families: ['Keilrahmenleiste schwarz'])
     monkeypatch.setattr(ai, 'rerank', lambda q, candidates: [
         {'number':item['number'], 'confidence':'mittel', 'reason':'Leiste'}
         for item in candidates if item['number'].startswith('K')][:8])

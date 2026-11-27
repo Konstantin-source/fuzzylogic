@@ -1,8 +1,9 @@
 import re
 import threading
+from functools import lru_cache
 import numpy as np
 from rapidfuzz.fuzz import token_set_ratio
-from app import db, openai_client as ai
+from app import db, families, openai_client as ai
 
 _vector_lock = threading.Lock()
 _vector_cache = None
@@ -35,6 +36,7 @@ def embedding_index(conn):
         _vector_cache = (key, matrix, index)
         return matrix, index
 
+@lru_cache(maxsize=50000)
 def normalize(text):
     text = str(text).casefold().replace('ä','ae').replace('ö','oe').replace('ü','ue').replace('ß','ss')
     text = re.sub(r'(?<=\d)\s*[x*/]\s*(?=\d)', 'x', text)
@@ -47,9 +49,9 @@ def dimensions(text):
 def related_search_terms(query):
     """Narrow, directional hints for common product-use relationships."""
     text = normalize(query)
-    if re.search(r'\brahmen\b.{0,60}\b(?:fuer|um)\b.{0,40}\bkeilrahmen\w*\b', text):
+    if families.seeks_outer_frame(text):
         # Preserve a specified colour; this relationship is a suggestion, not an assertion.
-        colour = ' schwarz' if re.search(r'\bschwarz\w*\b', text) else ''
+        colour = (' ' + families.colour(query)).rstrip()
         return ['Schattenfugenrahmen' + colour, 'Schattenfuge' + colour]
     return []
 
@@ -59,15 +61,22 @@ def rrf(*rankings, k=60):
         for rank, number in enumerate(ranking, 1): scores[number] = scores.get(number, 0) + 1 / (k + rank)
     return sorted(scores, key=lambda n: (-scores[n], n))
 
-def local_rank(query, rows, fts_numbers=()):
-    q = normalize(query); qdims = dimensions(query); tokens = set(q.split())
+def local_rank(query, rows, fts_numbers=(), wanted=()):
+    q = normalize(query); tokens = set(q.split())
+    requested = families.measures(query, next(iter(wanted)) if len(wanted) == 1 else '')
+    requested_colour = families.colour(query)
     fts = set(fts_numbers)
     def score(row):
         text = normalize(row['search_text'])
         value = token_set_ratio(q, text) / 100 + (0.3 if row['number'] in fts else 0)
         value += 0.2 * len(tokens & set(text.split())) / max(len(tokens), 1)
-        if q and q in (normalize(row['number']), normalize(row['ean'])): value += 3
-        if qdims and qdims & dimensions(text): value += 2
+        if q and q in (normalize(row['number']), normalize(row['ean'])): return 100
+        if row['family'] in wanted:
+            value += 8
+        if requested_colour:
+            actual = families.colour(row['name'] + ' ' + row['extra'])
+            value += 1.5 if requested_colour == actual else -0.5 if actual else 0
+        value += families.measure_score(requested, row)
         return value
     return [r['number'] for r in sorted(rows, key=lambda r: (-score(r), r['number']))]
 
@@ -99,11 +108,15 @@ def ai_search(query, category='', rerank=False):
     """Search the catalog using generated terms; generated text is never treated as an article."""
     hints = related_search_terms(query)
     available = ai.available()
+    with db.connect() as conn:
+        vocab = families.vocabulary(conn, category)
+        wanted = families.intent(query, vocab)
+        options = families.shortlist(conn, query, vocab, wanted, category) if available else []
     generated = []
     failed = False
     if available:
         try:
-            generated = ai.expand_query(query)
+            generated = ai.expand_query(query, options)
         except Exception:
             failed = True
     terms, seen_terms = [], set()
@@ -121,6 +134,12 @@ def ai_search(query, category='', rerank=False):
         rows = [dict(r) for r in conn.execute('SELECT * FROM articles' + (' WHERE category=?' if category else ''), (category,) if category else ())]
         by_id = {row['number']: row for row in rows}
         rankings = []
+        selected = set(wanted)
+        for term in generated:
+            selected.update(families.intent(term, vocab))
+        if selected:
+            members = [r for r in rows if r['family'] in selected]
+            rankings.append(local_rank(query, members, wanted=wanted or selected)[:20])
         for term in terms:
             tokens = re.findall(r'[\w]+', normalize(term))[:12]
             if not tokens:
@@ -167,7 +186,7 @@ def ai_search(query, category='', rerank=False):
                 if ranked:
                     ordered_results = ranked + [row for row in plain if row['number'] not in ranked_ids]
                     # Keep a locally suggested relationship visible even if the LLM omits it.
-                    if hints and rankings and rankings[0]:
+                    if (hints or selected) and rankings and rankings[0]:
                         suggested_id = rankings[0][0]
                         suggested = next((row for row in ordered_results if row['number'] == suggested_id), None)
                         if suggested and suggested_id not in {row['number'] for row in ordered_results[:4]}:
@@ -179,19 +198,34 @@ def ai_search(query, category='', rerank=False):
 
 def search(query, category='', rerank=False, use_ai=False):
     with db.connect() as conn:
-        rows = [dict(r) for r in conn.execute('SELECT * FROM articles' + (' WHERE category=?' if category else ''), (category,) if category else ())]
-        if not rows: return [], 'local'
+        wanted = families.intent(query, families.vocabulary(conn, category))
         terms = re.findall(r'[\w]+', normalize(query))
         fts = []
         if terms:
             expression = ' OR '.join('"' + t + '"' for t in terms[:20])
-            fts = [r[0] for r in conn.execute('SELECT number FROM article_fts WHERE article_fts MATCH ? LIMIT 500', (expression,))]
-        # Bound fuzzy work when FTS finds candidates; retain exact identifiers and dimensions.
-        fts_set = set(fts)
-        normalized_query = normalize(query)
-        query_dimensions = dimensions(query)
-        pool = [r for r in rows if r['number'] in fts_set or normalized_query in (normalize(r['number']), normalize(r['ean'])) or (query_dimensions and query_dimensions & dimensions(r['search_text']))] if fts else rows
-        local = local_rank(query, pool, fts)[:100]
+            scope = ' AND a.category=?' if category else ''
+            fts = [r[0] for r in conn.execute('SELECT a.number FROM article_fts JOIN articles a ON a.number=article_fts.number '
+                                              'WHERE article_fts MATCH ?' + scope + ' ORDER BY bm25(article_fts) LIMIT 500',
+                                              (expression, category) if category else (expression,))]
+        filters, params = [], []
+        if category:
+            filters.append('category=?')
+            params.append(category)
+        # With a possible formatted SKU, retain normalized identifier matching beyond the FTS limit.
+        possible_identifier = not wanted and any(ch.isdigit() for ch in query)
+        if (fts or wanted) and not use_ai and not possible_identifier:
+            clauses = ['number=? COLLATE NOCASE', 'ean=?']
+            params.extend((query, query))
+            for field, values in (('number', fts), ('family', sorted(wanted))):
+                if values:
+                    clauses.append(field + ' IN (' + ','.join('?' for _ in values) + ')')
+                    params.extend(values)
+            filters.append('(' + ' OR '.join(clauses) + ')')
+        sql = 'SELECT * FROM articles' + (' WHERE ' + ' AND '.join(filters) if filters else '')
+        rows = [dict(r) for r in conn.execute(sql, params)]
+        if not rows:
+            return [], 'local'
+        local = local_rank(query, rows, fts, wanted)[:100]
         ordered = local; mode = 'local'
         if use_ai and ai.available():
             try:

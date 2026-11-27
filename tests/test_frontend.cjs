@@ -24,7 +24,7 @@ function startApp(aiResponse = {results: [], terms: ['Schattenfugenrahmen'], mod
   const document = {
     activeElement: null, body: {append() {}},
     getElementById: element,
-    createElement: () => ({classList:{toggle() {}, remove() {}}, append() {}, remove() {}, select() {}}),
+    createElement: tag => ({tag, children:[], classList:{toggle() {}, remove() {}}, append(...items) {this.children.push(...items);}, remove() {}, select() {}}),
     addEventListener(name, handler) { documentHandlers[name] = handler; },
   };
   const context = {
@@ -101,4 +101,22 @@ test('AI panel can be collapsed and extra results revealed', async () => {
   app.element('ai-more').onclick();
   assert.equal(app.element('ai-results').children.length, 6);
   assert.equal(app.element('ai-more').attributes['aria-expanded'], 'true');
+});
+
+test('groups variants before limiting visible cards and keeps the best SKU on top', async () => {
+  const items = Array.from({length: 7}, (_, i) => ({
+    number:'SKU-' + i, name:'Rahmen', family:'Rahmen', variant_key:[i < 4 ? 'Serie A' : i]
+  }));
+  const app = startApp({results:items, terms:['Rahmen'], mode:'terms'});
+  app.element('query').value = 'Rahmen';
+  app.element('submit-search').onclick();
+  await new Promise(resolve => setImmediate(resolve));
+  const cards = app.element('ai-results').children;
+  assert.equal(cards.length, 4);
+  assert.equal(app.element('ai-more').hidden, true);
+  assert.match(cards[0].children[0].children[0].textContent, /SKU-0/);
+  const variants = cards[0].children.at(-1);
+  assert.equal(variants.tag, 'details');
+  assert.equal(variants.children[0].textContent, '3 weitere Varianten');
+  assert.match(variants.children[1].children[0].children[0].textContent, /SKU-1/);
 });

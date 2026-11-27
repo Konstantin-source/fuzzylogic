@@ -7,6 +7,7 @@ import unicodedata
 from decimal import Decimal
 from openpyxl import load_workbook
 from app import db
+from app.families import classify
 
 FIELDS = {
     'number': ['artikelnummer', 'artnr', 'artikelnr', 'artikel nr', 'sku', 'nummer'],
@@ -83,11 +84,12 @@ def import_rows(columns, records, mapping):
             search_text = article_search_text(values, syn.get(number, []))
             from app.search import normalize
             digest = hashlib.sha256(normalize(search_text).encode()).hexdigest()
-            articles.append(tuple(values[field] for field in FIELDS) + (search_text, digest))
+            family = classify(values['name'], values['extra'], values['matchcode'])
+            articles.append(tuple(values[field] for field in FIELDS) + (family, search_text, digest))
         if not articles: raise ValueError('Keine Artikel gefunden.')
         conn.execute('DELETE FROM article_fts')
         conn.execute('DELETE FROM articles')
-        conn.executemany('INSERT INTO articles (number,name,extra,category,unit,ean,location,matchcode,width,height,length,search_text,hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', articles)
+        conn.executemany('INSERT INTO articles (number,name,extra,category,unit,ean,location,matchcode,width,height,length,family,search_text,hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', articles)
         conn.executemany('INSERT INTO article_fts(number, search_text) VALUES (?,?)', [(a[0], a[-2]) for a in articles])
         conn.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', ('mapping:' + json.dumps(columns, ensure_ascii=False), json.dumps(mapping, ensure_ascii=False)))
     from app.search import invalidate_embedding_cache

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Artikelsuche im Katalog",
+  "version": "1.0.0",
+  "description": "Markierten Text im verbundenen Firmenkatalog suchen und Artikelnummern kopieren.",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "scripting", "contextMenus", "sidePanel", "storage"],
+  "background": {"service_worker": "worker.js"},
+  "action": {"default_title": "Artikelsuche öffnen"},
+  "side_panel": {"default_path": "panel.html"}
+}

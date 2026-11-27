@@ -39,4 +39,27 @@ Artikel-Vektoren werden bei Bedarf im Arbeitsspeicher normalisiert und wiederver
 
 ## Entwicklung
 
+### Produktfamilien und Maße
+
+Beim Import und beim ersten Start mit einem bestehenden Katalog leitet die App Familien lokal aus den Artikelbezeichnungen ab. Beim Suchen erhält das Modell bis zu zwölf zur Anfrage ausgewählte Familiennamen samt Beispielbezeichnungen und bekannten Verwendungen aus der gewählten Warengruppe. Es kann diese Namen für weitere Katalogsuchen wählen. Die Zuordnung ist heuristisch. Prüfe den Familiennamen im Dialog, bevor du über **Für Familie merken** einen Ausdruck hinterlegst. Der Begriff gilt sofort für die lokale Suche und nach einem Reimport auch für neue Mitglieder derselben Familie. Vorhandene Artikel-Embeddings können weiterverwendet werden.
+
+Bei Varianten zeigt die erste Karte die bestplatzierte Artikelnummer. Weitere passende Varianten derselben Modellbezeichnung, Ausführung und Warengruppe lassen sich aufklappen. Die Anzahl bezieht sich auf die gefundenen Treffer. Maßangaben mit Einheit werden umgerechnet, z. B. 60 cm in 600 mm. Bei den drei SelectLine-Maßspalten ohne Einheit kannst du in Portainer optional `CATALOG_DIMENSION_UNIT=mm` setzen, **wenn alle drei Spalten in Millimetern gepflegt werden**. Standardmäßig bleiben diese Werte einheitenlos.
+
+### Browser-Erweiterung und Kompaktfenster
+
+1. In der aktualisierten Webapp **Browser-Erweiterung laden** wählen und die ZIP-Datei in einen dauerhaften Ordner entpacken.
+2. In Chrome ab Version 116 unter `chrome://extensions` oder in aktuellem Edge unter `edge://extensions` den Entwicklermodus einschalten, **Entpackte Erweiterung laden** wählen und den Ordner mit der `manifest.json` öffnen.
+3. Den Katalog über internes HTTPS oder auf localhost öffnen und anmelden. Im Katalog-Tab per Rechtsklick auf das Erweiterungssymbol **Diesen Tab als Artikelkatalog verbinden** wählen. Diesen Tab geöffnet lassen. Nach einem Browserneustart erneut verbinden.
+4. In einer Browser-Mail Text markieren und per Rechtsklick **Im Artikelkatalog suchen** wählen. Die Seitenleiste sucht lokal und bietet die Artikelnummer zum Kopieren an. **KI-Suche** sendet eine zusätzliche, explizite Anfrage über den Katalogserver. Ein Klick auf das Erweiterungssymbol öffnet auch ein Suchfeld zum Einfügen.
+
+Die Erweiterung nutzt die bestehende Anmeldung im verbundenen Tab. Die letzte Markierung (bis 300 Zeichen) liegt pro Fenster im Sitzungsspeicher des Browsers. Für die native SelectLine-Anwendung lässt sich in der Webapp **Kompaktfenster öffnen** wählen und Text aus der Zwischenablage einfügen.
+
+### Suchqualität messen
+
+Im Checkout oder in der Portainer-Konsole des aktualisierten App-Containers führt `python -m tools.evaluate_search` 30 beschriftete Anfragen gegen einen temporären synthetischen Katalog aus. Die Ausgabe zählt die erwartete Artikelnummer unter den ersten sichtbaren Karten (Top 1 und Top 3) und misst die Laufzeit der lokalen Backend-Suche.
+
+Für eigene Testfälle eine private JSON-Datei außerhalb des Repositorys anlegen, z. B. mit `{"cases":[{"query":"mein Suchtext","expected":["meine Artikelnummer"]}]}`. `DATA_DIR` auf eine aktuelle Katalogkopie setzen und `python -m tools.evaluate_search --cases PFAD` aufrufen. Für einen Vergleich von 300 und 768 Dimensionen zusätzlich `--dimensions 300 768` angeben. Dafür müssen beide Indizes vollständig vorliegen und ein API-Schlüssel gesetzt sein. Der Vergleich sendet pro Testfall und Dimension eine Suchanfrage für das Query-Embedding an OpenAI. Er misst die Hybridsuche samt API-Latenz, ohne Reranking. Das Werkzeug baut keine Artikelindizes auf.
+
+### Lokal starten
+
 Python 3.12: `pip install -r requirements.txt`, dann `pytest`. Für den lokalen Start `APP_USERNAME` und `APP_PASSWORD` als Umgebungsvariablen setzen und `uvicorn app.main:app --reload --no-access-log` ausführen. `DATA_DIR` kann für lokale Entwicklung das Datenverzeichnis festlegen. API-Schlüssel gehören ausschließlich in die lokale `.env`, nicht in das Repository. Die Demo-Datei ist die einzige freigegebene CSV; produktive Exporte müssen außerhalb des Repositorys bleiben.

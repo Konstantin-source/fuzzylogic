@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from pathlib import Path
+from app.families import classify
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
 
@@ -16,6 +17,7 @@ def init():
         PRAGMA journal_mode=WAL;
         CREATE TABLE IF NOT EXISTS articles (number TEXT PRIMARY KEY, name TEXT NOT NULL, extra TEXT NOT NULL, category TEXT NOT NULL, unit TEXT NOT NULL, ean TEXT NOT NULL, location TEXT NOT NULL, search_text TEXT NOT NULL, hash TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS synonyms (number TEXT NOT NULL, term TEXT NOT NULL, PRIMARY KEY(number, term));
+        CREATE TABLE IF NOT EXISTS family_terms (family TEXT NOT NULL, term TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY(family, term));
         CREATE TABLE IF NOT EXISTS embeddings (hash TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, dimensions INTEGER NOT NULL, vector BLOB NOT NULL, PRIMARY KEY(hash, provider, model, dimensions));
         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE VIRTUAL TABLE IF NOT EXISTS article_fts USING fts5(number UNINDEXED, search_text, tokenize='unicode61 remove_diacritics 2');
@@ -29,6 +31,14 @@ def init():
             db.execute('BEGIN IMMEDIATE')
             db.execute('DROP TABLE embeddings')
             db.execute('CREATE TABLE embeddings (hash TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, dimensions INTEGER NOT NULL, vector BLOB NOT NULL, PRIMARY KEY(hash, provider, model, dimensions))')
+        if 'family' not in article_columns:
+            if not db.in_transaction:
+                db.execute('BEGIN IMMEDIATE')
+            db.execute("ALTER TABLE articles ADD COLUMN family TEXT NOT NULL DEFAULT ''")
+            rows = db.execute('SELECT number,name,extra,matchcode FROM articles').fetchall()
+            db.executemany('UPDATE articles SET family=? WHERE number=?',
+                           [(classify(r['name'], r['extra'], r['matchcode']), r['number']) for r in rows])
+        db.execute('CREATE INDEX IF NOT EXISTS articles_family ON articles(family,category)')
 
 def synonyms(db):
     result = {}
