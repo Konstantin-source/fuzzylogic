@@ -10,7 +10,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 test('selection action transfers only bounded text to the originating window', async () => {
   const writes = [], panels = [];
   const chrome = {
-    runtime:{onInstalled:event()}, contextMenus:{onClicked:event()}, action:{onClicked:event()},
+    runtime:{onInstalled:event(),getManifest:() => ({})}, contextMenus:{onClicked:event()}, action:{onClicked:event()},
     sidePanel:{open:x => panels.push(x)}, tabs:{onRemoved:event()},
     storage:{session:{set:x => writes.push(x)}}
   };
@@ -22,6 +22,24 @@ test('selection action transfers only bounded text to the originating window', a
   const manifest = JSON.parse(source('manifest.json'));
   assert.equal(manifest.host_permissions, undefined);
   assert.ok(!manifest.permissions.includes('tabs'));
+});
+
+test('downloaded extension opens the full server app without a connected tab', () => {
+  const opened = [];
+  const chrome = {
+    runtime:{onInstalled:event(),getManifest:() => ({homepage_url:'https://katalog.test:8443/'})},
+    contextMenus:{onClicked:event()}, action:{onClicked:event()}, tabs:{onRemoved:event()},
+    windows:{create:options => opened.push(options)}
+  };
+  vm.runInNewContext(source('worker.js'), {chrome, URL, URLSearchParams});
+  chrome.action.onClicked.handle({incognito:false});
+  assert.equal(opened[0].url, 'https://katalog.test:8443/?kompakt=1');
+  const text = 'Rahmen & Leiste #2 ' + 'a'.repeat(300);
+  chrome.contextMenus.onClicked.handle({menuItemId:'search',selectionText:text}, {incognito:true});
+  const url = new URL(opened[1].url);
+  assert.equal(url.search, '?kompakt=1');
+  assert.equal(new URLSearchParams(url.hash.slice(1)).get('q'), text.slice(0,300));
+  assert.equal(opened[1].incognito, true);
 });
 
 test('panel searches locally on selection, invokes AI only on request and uses the connected origin', async () => {

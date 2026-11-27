@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function startApp(aiResponse = {results: [], terms: ['Schattenfugenrahmen'], mode: 'terms', message: ''}) {
+function startApp(aiResponse = {results: [], terms: ['Schattenfugenrahmen'], mode: 'terms', message: ''}, window = {}) {
   const elements = new Map();
   const documentHandlers = {};
   const requests = [];
@@ -22,7 +22,7 @@ function startApp(aiResponse = {results: [], terms: ['Schattenfugenrahmen'], mod
     return elements.get(id);
   }
   const document = {
-    activeElement: null, body: {append() {}},
+    activeElement: null, body: {append() {}, classList:{add() {}}},
     getElementById: element,
     createElement: tag => ({tag, children:[], classList:{toggle() {}, remove() {}}, append(...items) {this.children.push(...items);}, remove() {}, select() {}}),
     addEventListener(name, handler) { documentHandlers[name] = handler; },
@@ -30,7 +30,7 @@ function startApp(aiResponse = {results: [], terms: ['Schattenfugenrahmen'], mod
   const context = {
     document, URLSearchParams, Option: function Option(text, value) { this.text=text; this.value=value; },
     localStorage: {getItem() {return '[]';}, setItem() {}},
-    window: {}, navigator: {}, prompt() {}, alert() {},
+    window, navigator: {}, prompt() {}, alert() {},
     fetch: async url => {
       requests.push(url);
       return {ok: true, json: async () => url === '/api/config'
@@ -49,6 +49,16 @@ function startApp(aiResponse = {results: [], terms: ['Schattenfugenrahmen'], mod
 function searchRequests(app) {
   return app.requests.filter(url => String(url).startsWith('/api/search?')).map(url => new URLSearchParams(String(url).split('?')[1]));
 }
+
+test('selection opens in the web app with local results before explicit AI submission', () => {
+  const clean = [];
+  const app = startApp(undefined, {location:{pathname:'/',search:'?kompakt=1',hash:'#q=Rahmen+schwarz'},
+    history:{replaceState:(_state,_title,url) => clean.push(url)}});
+  assert.equal(app.element('query').value, 'Rahmen schwarz');
+  assert.deepEqual(clean, ['/?kompakt=1']);
+  assert.equal(searchRequests(app)[0].get('q'), 'Rahmen schwarz');
+  assert.ok(!app.requests.some(url => url.startsWith('/api/ai-search')));
+});
 
 test('typing and option changes stay local, button explicitly requests AI', async () => {
   const app = startApp();

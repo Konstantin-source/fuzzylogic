@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -38,11 +38,18 @@ def index(): return FileResponse(Path(__file__).parent / 'static' / 'index.html'
 
 
 @app.get('/browser-erweiterung.zip')
-def browser_extension():
+def browser_extension(request: Request, https: bool = False):
     directory = Path(__file__).resolve().parents[1] / 'extension'
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:
-        for filename in ('manifest.json', 'worker.js', 'panel.html', 'panel.css', 'panel.js'):
+        manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
+        # Keep the externally visible scheme when TLS terminates on the internal proxy.
+        url = request.url
+        if url.hostname and url.username is None and url.password is None:
+            scheme = 'https' if https else url.scheme
+            manifest['homepage_url'] = f'{scheme}://{url.netloc}/'
+        bundle.writestr('manifest.json', json.dumps(manifest, ensure_ascii=False))
+        for filename in ('worker.js', 'panel.html', 'panel.css', 'panel.js'):
             bundle.write(directory / filename, filename)
     return Response(archive.getvalue(), media_type='application/zip',
                     headers={'Content-Disposition':'attachment; filename="artikelsuche-erweiterung.zip"'})

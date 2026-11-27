@@ -88,10 +88,11 @@ def test_downloadable_extension_matches_manifest(catalog, monkeypatch):
     with TestClient(app) as client:
         path = '/browser-erweiterung.zip'
         assert client.get(path).status_code == 401
-        response = client.get(path, auth=('lager', 'synthetic-password-for-test'))
+        response = client.get(path + '?https=true', auth=('lager', 'synthetic-password-for-test'))
         assert response.status_code == 200
         with ZipFile(io.BytesIO(response.content)) as bundle:
             manifest = json.loads(bundle.read('manifest.json'))
+            assert manifest['homepage_url'] == 'https://testserver/'
             assert manifest['side_panel']['default_path'] in bundle.namelist()
             assert manifest['background']['service_worker'] in bundle.namelist()
             assert bundle.testzip() is None

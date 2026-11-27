@@ -49,10 +49,10 @@ Bei Varianten zeigt die erste Karte die bestplatzierte Artikelnummer. Weitere pa
 
 1. In der aktualisierten Webapp **Browser-Erweiterung laden** wählen und die ZIP-Datei in einen dauerhaften Ordner entpacken.
 2. In Chrome ab Version 116 unter `chrome://extensions` oder in aktuellem Edge unter `edge://extensions` den Entwicklermodus einschalten, **Entpackte Erweiterung laden** wählen und den Ordner mit der `manifest.json` öffnen.
-3. Den Katalog über internes HTTPS oder auf localhost öffnen und anmelden. Im Katalog-Tab per Rechtsklick auf das Erweiterungssymbol **Diesen Tab als Artikelkatalog verbinden** wählen. Diesen Tab geöffnet lassen. Nach einem Browserneustart erneut verbinden.
-4. In einer Browser-Mail Text markieren und per Rechtsklick **Im Artikelkatalog suchen** wählen. Die Seitenleiste sucht lokal und bietet die Artikelnummer zum Kopieren an. **KI-Suche** sendet eine zusätzliche, explizite Anfrage über den Katalogserver. Ein Klick auf das Erweiterungssymbol öffnet auch ein Suchfeld zum Einfügen.
+3. Auf das Erweiterungssymbol klicken. Die heruntergeladene ZIP enthält die Adresse dieser Webapp. Sie öffnet sich im Kompaktfenster mit dem üblichen Katalog und allen Suchfunktionen. Falls der Browser nach der Anmeldung fragt, gelten die in Portainer hinterlegten Werte für `APP_USERNAME` und `APP_PASSWORD`.
+4. In einer Browser-Mail Text markieren und per Rechtsklick **Im Artikelkatalog suchen** wählen. Das Fenster übernimmt bis zu 300 Zeichen und zeigt lokale Treffer. **Suchen** oder die Eingabetaste startet wie in der Webapp die zusätzliche KI-Suche.
 
-Die Erweiterung nutzt die bestehende Anmeldung im verbundenen Tab. Die letzte Markierung (bis 300 Zeichen) liegt pro Fenster im Sitzungsspeicher des Browsers. Für die native SelectLine-Anwendung lässt sich in der Webapp **Kompaktfenster öffnen** wählen und Text aus der Zwischenablage einfügen.
+Die optionale Schnellsuche in der Seitenleiste ist über den Rechtsklick auf das Erweiterungssymbol erreichbar. Dafür im angemeldeten Katalog-Tab **Diesen Tab als Artikelkatalog verbinden** wählen und den Tab geöffnet lassen. Bei Installation direkt aus dem Quellordner fehlt die vorkonfigurierte Serveradresse, dann öffnet das Symbol die Seitenleiste. Für die native SelectLine-Anwendung lässt sich in der Webapp **Kompaktfenster öffnen** wählen und Text einfügen.
 
 ### Suchqualität messen
 
