@@ -49,6 +49,7 @@ test('panel searches locally on selection, invokes AI only on request and uses t
   await tick();
   assert.deepEqual(requests,['/api/search?q=Rahmen']);
   assert.equal(get('results').children.length, 1);
+  assert.equal(get('status').textContent, '1 Artikel gefunden.');
   get('q').oninput();
   assert.equal(requests.length, 1);
   await get('ai').onclick();
@@ -57,4 +58,9 @@ test('panel searches locally on selection, invokes AI only on request and uses t
   await get('ai').onclick();
   assert.equal(requests.length, 2);
   assert.equal(get('results').children.length, 0);
+  delete state.catalog;
+  get('form').onsubmit({preventDefault() {}});
+  await tick();
+  assert.match(get('status').textContent, /Verbinde zuerst den Katalog-Tab/);
+  assert.equal(requests.length, 2);
 });

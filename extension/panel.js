@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 let windowKey, sequence = 0, lastSelection;
-const onboarding = 'Katalog öffnen und anmelden. Dann per Rechtsklick auf das Erweiterungssymbol „Diesen Tab als Artikelkatalog verbinden“ wählen.';
+const onboarding = 'Öffne die Artikelsuche in einem Tab und melde dich an. Klicke dort mit der rechten Maustaste auf das Erweiterungssymbol und wähle „Diesen Tab als Artikelkatalog verbinden“. Lass den Tab geöffnet.';
 
 // Runs in the isolated world of the explicitly connected catalogue tab.
 async function fetchCatalog(origin, query, useAI) {
@@ -35,11 +35,18 @@ async function search(useAI = false) {
   const query = $('q').value.trim();
   $('results').replaceChildren();
   $('status').textContent = '';
-  if (!query) return;
-  const {catalog} = await chrome.storage.session.get('catalog');
-  if (!catalog || request !== sequence) return;
-  $('status').textContent = useAI ? 'KI-Suche läuft …' : 'Katalog wird durchsucht …';
+  if (!query) {
+    $('status').textContent = 'Bitte einen Suchbegriff eingeben.';
+    return;
+  }
   try {
+    const {catalog} = await chrome.storage.session.get('catalog');
+    if (request !== sequence) return;
+    if (!catalog) {
+      $('status').textContent = 'Suche noch nicht gestartet. Verbinde zuerst den Katalog-Tab wie oben beschrieben.';
+      return;
+    }
+    $('status').textContent = useAI ? 'KI-Suche läuft …' : 'Katalog wird durchsucht …';
     const [frame] = await chrome.scripting.executeScript({
       target:{tabId:catalog.tabId}, func:fetchCatalog, args:[catalog.origin, query, useAI]
     });
@@ -62,7 +69,8 @@ async function search(useAI = false) {
       }
       $('results').append(entry);
     }
-    $('status').textContent = data.message || (data.results.length ? '' : 'Keine Treffer.');
+    const count = data.results.length;
+    $('status').textContent = [count ? count + ' Artikel gefunden.' : 'Keine Treffer.', data.message].filter(Boolean).join(' ');
   } catch (error) {
     if (request === sequence) $('status').textContent = (error.message || 'Verbindung prüfen.') + ' ' + onboarding;
   }
@@ -70,7 +78,8 @@ async function search(useAI = false) {
 
 async function refresh() {
   const state = await chrome.storage.session.get(['catalog','connectionError',windowKey]);
-  $('connection').textContent = state.catalog ? 'Verbunden mit ' + state.catalog.origin : (state.connectionError || onboarding);
+  $('connection').textContent = state.catalog ? 'Verbunden mit ' + state.catalog.origin
+    : [state.connectionError || 'Kein Katalog verbunden.', onboarding].join(' ');
   const selection = state[windowKey];
   if (selection && selection.id !== lastSelection) {
     $('q').value = selection.text;
